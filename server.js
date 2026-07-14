@@ -44,10 +44,19 @@ SOURCE MATERIAL:
 ${content}
 `
 
-    const { text } = await generateAILong({
-      prompt,
-      maxTokens: 65536,
-    })
+    let result
+
+try {
+  result = await generateAILong({
+    prompt,
+    maxTokens: 65536,
+  })
+} catch (aiError) {
+  console.error("AI Error:", aiError)
+  return res.status(500).json({ error: "AI generation failed" })
+}
+
+res.json({ notes: result.text })
 
     res.json({ notes: text })
 
