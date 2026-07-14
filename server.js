@@ -1,20 +1,22 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import { generateAILong } from './ai.js'
 
 dotenv.config()
 
 const app = express()
+
 app.use(cors())
 app.use(express.json({ limit: '50mb' }))
 
-// ✅ Health check
+// ✅ Test route
 app.get('/', (req, res) => {
-  res.send('LearnNovaAI Backend Running ✅')
+  res.send('LearnNova Backend Running ✅')
 })
 
 
-// ✅ NOTES GENERATION ROUTE
+// ✅ Notes Route
 app.post('/generate-notes', async (req, res) => {
   try {
     const { sources, focus } = req.body
@@ -26,51 +28,32 @@ app.post('/generate-notes', async (req, res) => {
     const content = sources
       .map((s, i) => `--- SOURCE ${i + 1}: ${s.name} ---\n${s.content}`)
       .join('\n\n')
-      .slice(0, 150000)   // ✅ Large allowed
+      .slice(0, 200000)  // Large allowed ✅
 
     const prompt = `
-You are generating CLASS NOTES for a CA Inter Law student.
+You are generating CLASS NOTES.
 
 ${focus ? `FOCUS: ${focus}` : ''}
 
-STRICT RULES:
-- Use ONLY provided content
-- Structured notes
-- Bullet points
-- Keep section numbers exactly
-- No storytelling
+Strict structured notes.
+Use only provided content.
+Use bullet points.
+No outside knowledge.
 
-CONTENT:
+SOURCE MATERIAL:
 ${content}
 `
 
-    // ✅ Call Gemini
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }]
-        })
-      }
-    )
+    const { text } = await generateAILong({
+      prompt,
+      maxTokens: 65536,
+    })
 
-    const data = await geminiRes.json()
-
-    if (!geminiRes.ok) {
-      console.error(data)
-      return res.status(500).json({ error: 'AI generation failed' })
-    }
-
-    const notes =
-      data.candidates?.[0]?.content?.parts?.[0]?.text || 'No notes generated.'
-
-    res.json({ notes })
+    res.json({ notes: text })
 
   } catch (err) {
     console.error(err)
-    res.status(500).json({ error: 'Server error' })
+    res.status(500).json({ error: err.message })
   }
 })
 
