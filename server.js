@@ -25,44 +25,63 @@ app.post('/generate-notes', async (req, res) => {
       return res.status(400).json({ error: 'No sources provided' })
     }
 
-    const content = sources
+    // ✅ Combine all content
+    const fullContent = sources
       .map((s, i) => `--- SOURCE ${i + 1}: ${s.name} ---\n${s.content}`)
       .join('\n\n')
-      .slice(0, 200000)  // Large allowed ✅
 
-    const prompt = `
-You are generating CLASS NOTES.
+    // ✅ Safe chunk size (important)
+    const CHUNK_SIZE = 40000   // ~10k tokens approx
+    const chunks = []
+
+    for (let i = 0; i < fullContent.length; i += CHUNK_SIZE) {
+      chunks.push(fullContent.slice(i, i + CHUNK_SIZE))
+    }
+
+    console.log(`Processing ${chunks.length} chunks`)
+
+    let finalNotes = ''
+
+    for (let i = 0; i < chunks.length; i++) {
+      console.log(`Processing chunk ${i + 1}/${chunks.length}`)
+
+      const prompt = `
+You are generating structured CA Inter Law class notes.
 
 ${focus ? `FOCUS: ${focus}` : ''}
 
-Strict structured notes.
-Use only provided content.
-Use bullet points.
-No outside knowledge.
+STRICT RULES:
+- Use ONLY provided content
+- Structured notes
+- Bullet points
+- Preserve section numbers
+- No outside knowledge
 
 SOURCE MATERIAL:
-${content}
+${chunks[i]}
 `
 
-    let result
+      let result
 
-try {
-  result = await generateAILong({
-    prompt,
-    maxTokens: 65536,
-  })
-} catch (aiError) {
-  console.error("AI Error:", aiError)
-  return res.status(500).json({ error: "AI generation failed" })
-}
+      try {
+        result = await generateAILong({
+          prompt,
+          maxTokens: 8192,
+        })
+      } catch (aiError) {
+        console.error(`Chunk ${i + 1} failed:`, aiError)
+        return res.status(500).json({ error: "AI generation failed" })
+      }
 
-res.json({ notes: result.text })
+      finalNotes += `\n\n--- PART ${i + 1} ---\n\n`
+      finalNotes += result.text
+    }
 
-    res.json({ notes: text })
+    return res.json({ notes: finalNotes.trim() })
 
   } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: err.message })
+    console.error("Server Error:", err)
+    return res.status(500).json({ error: "Server error" })
   }
 })
 
