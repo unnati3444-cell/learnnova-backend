@@ -1,9 +1,45 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({
-  model: "gemini-1.5-flash", // stable free model
-});
+
+// ✅ Free Gemini models (try in this order)
+const GEMINI_MODELS = [
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+  "gemini-1.5-flash",
+  "gemini-2.5-flash-lite",
+];
+
+async function callGemini(prompt, maxTokens = 2000) {
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      console.log(`Trying Gemini model: ${modelName}`);
+
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+      });
+
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature: 0.4,
+        },
+      });
+
+      const text = result.response.text().trim();
+
+      if (!text) throw new Error("Empty response");
+
+      return text;
+
+    } catch (err) {
+      console.log(`Model failed: ${modelName}`);
+    }
+  }
+
+  throw new Error("All Gemini models failed");
+}
 
 // ✅ Stage 1 – Clean Transcript
 export async function cleanChunkWithAI({ content, focus }) {
@@ -38,18 +74,10 @@ TRANSCRIPT:
 ${content}
 `;
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      maxOutputTokens: 2048,
-      temperature: 0.3,
-    },
-  });
-
-  return result.response.text().trim();
+  return await callGemini(prompt, 1500);
 }
 
-// ✅ Stage 2 – Premium Formatting Layer
+// ✅ Stage 2 – Final Publishing Formatter
 export async function formatFinalNotes({ content, focus }) {
   const prompt = `
 You are an expert academic publishing formatter.
@@ -58,30 +86,26 @@ Transform the following academic content into PREMIUM, EDITORIAL-STYLE, EXAM-REA
 
 STRUCTURE:
 
-1. Title Banner with relevant emojis.
-2. Brief Overview (2–4 lines only).
-3. Key Points (5–8 concise bullets).
-4. Structured numbered sections with emoji headers.
-5. Convert procedural or comparative information into tables wherever possible.
+1. Title Banner with emojis.
+2. Brief Overview (2–4 lines).
+3. Key Points (5–8 bullets).
+4. Structured sections with emoji headers.
+5. Convert procedures into tables where possible.
 6. Add:
    - Timeline Summary table (if deadlines exist)
-   - Practical Checklist section (if procedural topic)
-   - Key Takeaways section
+   - Practical Checklist
+   - Key Takeaways
 
-FORMATTING RULES:
+RULES:
 
-- Use emojis for major section headers (📘 📜 ⚖️ 📂 🏢 ✅ 📌 ⏱️ 📊 🔍).
-- Bold important keywords, forms, section numbers, and deadlines.
-- Keep paragraphs short.
+- Bold important keywords.
+- Highlight section numbers, forms, deadlines.
 - Clean academic tone.
 - No repetition.
-
-STRICTLY DO NOT INCLUDE:
-- Teacher names
-- YouTube references
-- Motivational commentary
-- Transcript phrases
-- Chunk markers
+- No teacher references.
+- No YouTube references.
+- No transcript phrases.
+- No chunk markers.
 
 ${focus ? `FOCUS AREA: ${focus}` : ""}
 
@@ -89,13 +113,5 @@ CONTENT:
 ${content}
 `;
 
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: {
-      maxOutputTokens: 3500,
-      temperature: 0.4,
-    },
-  });
-
-  return result.response.text().trim();
+  return await callGemini(prompt, 2500);
 }
