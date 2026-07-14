@@ -1,92 +1,101 @@
-import Groq from 'groq-sdk'
-import OpenAI from 'openai'
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({
+  model: "gemini-1.5-flash", // stable free model
+});
 
-const openrouter = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-})
+// ✅ Stage 1 – Clean Transcript
+export async function cleanChunkWithAI({ content, focus }) {
+  const prompt = `
+You are an expert academic content extractor.
 
-const GEMINI_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-flash-lite',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
-]
+Extract ONLY academic study material from the following lecture transcript.
 
-const GROQ_PRIMARY = 'llama-3.3-70b-versatile'
-const GROQ_FALLBACK = 'llama-3.1-8b-instant'
+REMOVE:
+- Teacher references
+- YouTube references
+- Feedback requests
+- Motivational lines
+- Repetition
+- Series branding
+- Transcript commentary
 
-const OR_PRIMARY = 'meta-llama/llama-3.3-70b-instruct:free'
-const OR_FALLBACK = 'qwen/qwen-2.5-72b-instruct:free'
+Keep:
+- Definitions
+- Sections
+- Procedures
+- Case laws
+- Conditions
+- Timelines
+- Legal provisions
 
-function trimPrompt(prompt, maxChars) {
-  if (prompt.length <= maxChars) return prompt
-  return prompt.slice(0, maxChars)
-}
+Return clean academic content only.
 
-async function callGemini(opts, model) {
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  const m = genAI.getGenerativeModel({ model })
+${focus ? `FOCUS AREA: ${focus}` : ""}
 
-  const result = await m.generateContent({
-    contents: [{ role: 'user', parts: [{ text: opts.prompt }] }],
+TRANSCRIPT:
+${content}
+`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
-      maxOutputTokens: opts.maxTokens ?? 8192,
-      temperature: opts.temperature ?? 0.4,
+      maxOutputTokens: 2048,
+      temperature: 0.3,
     },
-  })
+  });
 
-  const text = result.response.text().trim()
-  if (!text) throw new Error(`Empty Gemini (${model})`)
-  return text
+  return result.response.text().trim();
 }
 
-async function callGroq(opts, model, limit) {
-  const completion = await groq.chat.completions.create({
-    model,
-    messages: [{ role: 'user', content: trimPrompt(opts.prompt, limit) }],
-    max_tokens: Math.min(opts.maxTokens ?? 4096, 4096),
-    temperature: opts.temperature ?? 0.4,
-  })
+// ✅ Stage 2 – Premium Formatting Layer
+export async function formatFinalNotes({ content, focus }) {
+  const prompt = `
+You are an expert academic publishing formatter.
 
-  const text = completion.choices[0]?.message?.content?.trim()
-  if (!text) throw new Error(`Empty Groq (${model})`)
-  return text
-}
+Transform the following academic content into PREMIUM, EDITORIAL-STYLE, EXAM-READY STUDY NOTES.
 
-async function callOpenRouter(opts, model) {
-  const completion = await openrouter.chat.completions.create({
-    model,
-    messages: [{ role: 'user', content: opts.prompt }],
-    max_tokens: opts.maxTokens ?? 8192,
-    temperature: opts.temperature ?? 0.4,
-  })
+STRUCTURE:
 
-  const text = completion.choices[0]?.message?.content?.trim()
-  if (!text) throw new Error(`Empty OpenRouter (${model})`)
-  return text
-}
+1. Title Banner with relevant emojis.
+2. Brief Overview (2–4 lines only).
+3. Key Points (5–8 concise bullets).
+4. Structured numbered sections with emoji headers.
+5. Convert procedural or comparative information into tables wherever possible.
+6. Add:
+   - Timeline Summary table (if deadlines exist)
+   - Practical Checklist section (if procedural topic)
+   - Key Takeaways section
 
-export async function generateAILong(opts) {
-  const attempts = [
-    ...GEMINI_MODELS.map(m => () => callGemini(opts, m)),
-    () => callOpenRouter(opts, OR_PRIMARY),
-    () => callOpenRouter(opts, OR_FALLBACK),
-    () => callGroq(opts, GROQ_PRIMARY, 20000),
-    () => callGroq(opts, GROQ_FALLBACK, 10000),
-  ]
+FORMATTING RULES:
 
-  for (const fn of attempts) {
-    try {
-      const text = await fn()
-      return { text }
-    } catch (err) {
-      console.log('Provider failed, trying next...')
-    }
-  }
+- Use emojis for major section headers (📘 📜 ⚖️ 📂 🏢 ✅ 📌 ⏱️ 📊 🔍).
+- Bold important keywords, forms, section numbers, and deadlines.
+- Keep paragraphs short.
+- Clean academic tone.
+- No repetition.
 
-  throw new Error('All AI providers failed')
+STRICTLY DO NOT INCLUDE:
+- Teacher names
+- YouTube references
+- Motivational commentary
+- Transcript phrases
+- Chunk markers
+
+${focus ? `FOCUS AREA: ${focus}` : ""}
+
+CONTENT:
+${content}
+`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      maxOutputTokens: 3500,
+      temperature: 0.4,
+    },
+  });
+
+  return result.response.text().trim();
 }
